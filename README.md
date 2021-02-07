@@ -1,6 +1,6 @@
 # Meta-seq2seq with generic transformers
 
-The code here uses code from Brenden Lake's [meta-seq2seq repo](https://github.com/facebookresearch/meta_seq2seq) to generate the episodes. Sample output:
+The code here uses code from Brenden Lake's [meta-seq2seq repo](https://github.com/facebookresearch/meta_seq2seq) to generate the episodes. Sample output (truncated):
 ```
 Namespace(batch_size=16, dropout=0.0, emsize=512, eval_interval=1000, lr=0.0001, nhead=4, nhid=1024, nlayers=4, num_episodes=999999, num_episodes_val=5, seed=1111)
 -----------------------------------------------------------------------------------------
@@ -47,6 +47,9 @@ Namespace(batch_size=16, dropout=0.0, emsize=512, eval_interval=1000, lr=0.0001,
 -----------------------------------------------------------------------------------------
 -----------------------------------------------------------------------------------------
 | iteration  15000 | time/iter:  0.00s | validation loss 0.4211 | 
+-----------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------
+| iteration  16000 | time/iter:  0.00s | validation loss 0.3941 | 
 -----------------------------------------------------------------------------------------
 ```
 ##
