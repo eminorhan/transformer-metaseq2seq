@@ -2,8 +2,8 @@
 
 #SBATCH --nodes=1
 #SBATCH --ntasks=4
-#SBATCH --gres=gpu:1
-#SBATCH --mem=160GB
+#SBATCH --gres=gpu:titanrtx:1
+#SBATCH --mem=320GB
 #SBATCH --time=48:00:00
 #SBATCH --array=0
 #SBATCH --job-name=meta

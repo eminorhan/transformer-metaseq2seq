@@ -247,13 +247,13 @@ class TransformerModel(nn.Module):
 
         self.embedding = nn.Embedding(ntoken, emsize)
         self.pos_encoder = PositionalEncoding(emsize, dropout)
-        encoder_layers = nn.TransformerEncoderLayer(emsize, nhead, nhid, dropout)
-        self.transformer = nn.TransformerEncoder(encoder_layers, nlayers)
+        self.transformer =  nn.Transformer(nhead=8, num_encoder_layers=4, num_decoder_layers=4)
         self.linear = nn.Linear(emsize, ntoken)
 
-    def forward(self, src, src_mask=None):    
+    def forward(self, src, tgt, src_mask=None, tgt_mask=None):    
         src = self.pos_encoder(self.embedding(src))
-        out = self.linear(self.transformer(src))
+        tgt = self.pos_encoder(self.embedding(tgt))
+        out = self.linear(self.transformer(src, tgt))
         out = F.log_softmax(out, dim=-1)
         return out
 
@@ -263,11 +263,11 @@ if __name__ == '__main__':
     max_try_novel = 100  # number of attempts to find a novel episode (not in tabu list) before throwing an error
     use_reconstruct_loss = False  # whether support items are included also as query items 
     num_episodes_val = 5  # number of episodes to use as validation throughout learning
-    num_episodes = 1000  # number of training episodes
-    batch_size = 50
+    num_episodes = 10000  # number of training episodes
+    batch_size = 32
 
     # model config
-    emsize = 1024  # embedding dim
+    emsize = 512  # embedding dim
     dropout = 0.0  # dropout rate
 
     scan_all = ge.load_scan_file('all', 'train')
@@ -283,7 +283,7 @@ if __name__ == '__main__':
     # set up transformer encoder-decoder model, loss, optimizer
     model = TransformerModel(ntoken=ntoken, emsize=emsize, nhead=8, nhid=2048, nlayers=8, dropout=dropout)
     criterion = nn.NLLLoss()
-    optimizer = torch.optim.AdamW(model.parameters(), 0.0005)
+    optimizer = torch.optim.Adam(model.parameters(), 0.0001)
 
     generate_episode_train = lambda tabu_episodes : generate_prim_permutation(shuffle=True, 
                                                                               nsupport=20, 
@@ -312,39 +312,55 @@ if __name__ == '__main__':
         tabu_episodes = tabu_update(tabu_episodes, sample['identifier'])
 
     for episode in range(1, num_episodes+1):
-        
+
         model.train()
 
         # Generate a batch
-        x = torch.full((1380, batch_size), 19, dtype=torch.int64)  # pad with SOS symbol
-        y = torch.full((1380, batch_size), 19, dtype=torch.int64)  # pad with SOS symbol  
-         
+        x = torch.full((400, batch_size), 19, dtype=torch.int64)  # pad with SOS symbol
+        y = torch.full((980, batch_size), 19, dtype=torch.int64)  # pad with SOS symbol  
+        z = torch.full((980, batch_size), 19, dtype=torch.int64)  # pad with SOS symbol  
+
         for i in range(batch_size):
             sample = generate_episode_train(tabu_episodes)
-            x_b = torch.cat((sample['xs_padded'].flatten(), sample['ys_padded'].flatten(), sample['xq_padded'].flatten()))
+
+            x_b = torch.cat((sample['xs_padded'].flatten(), sample['xq_padded'].flatten()))
+            y_s = sample['ys_padded'].flatten()
+            y_q = sample['yq_padded'].flatten()
+
             x[:len(x_b), i] = x_b
-            y_b = sample['yq_padded'].flatten()
-            y[:len(y_b), i] = y_b
+            y[:len(y_s), i] = y_s
+            z[:len(y_q), i] = y_q
 
         # update params
         model.zero_grad()
-        output = model(x)
-        loss = criterion(output.view(-1, ntoken), y.view(-1))
+        output = model(x, y, src_mask=None, tgt_mask=None)
+        loss = criterion(output.view(-1, ntoken), z.view(-1))
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        print('Train loss:', loss.item())
+        print('Iteration:', episode, 'Train loss:', loss.item())
 
-        if episode % 50 == 0:
+        if episode % 100 == 0:
 
             model.eval()
             with torch.no_grad():
-                for i in range(len(samples_val)):
-                    x = torch.cat((samples_val[i]['xs_padded'].flatten(), samples_val[i]['ys_padded'].flatten(), samples_val[i]['xq_padded'].flatten())).view(-1, 1)
-                    y = samples_val[i]['yq_padded'].flatten().view(-1, 1)
-                    eval_out = model(x)
-                    eval_out = torch.argmax(eval_out, dim=-1)
+                # Generate a batch
+                x = torch.full((400, len(samples_val)), 19, dtype=torch.int64)  # pad with SOS symbol
+                y = torch.full((980, len(samples_val)), 19, dtype=torch.int64)  # pad with SOS symbol  
+                z = torch.full((980, len(samples_val)), 19, dtype=torch.int64)  # pad with SOS symbol  
 
-                    print('y:', y[:20, 0])
-                    print('y_pred:', eval_out[:20, :])
+                for i in range(len(samples_val)):
+                    x_b = torch.cat((samples_val[i]['xs_padded'].flatten(), samples_val[i]['xq_padded'].flatten()))
+                    y_s = samples_val[i]['ys_padded'].flatten()
+                    y_q = samples_val[i]['yq_padded'].flatten()
+
+                    x[:len(x_b), i] = x_b
+                    y[:len(y_s), i] = y_s
+                    z[:len(y_q), i] = y_q
+
+                val_out = model(x, y, src_mask=None, tgt_mask=None)
+                val_loss = criterion(val_out.view(-1, ntoken), z.view(-1))
+                # eval_out = torch.argmax(eval_out, dim=-1)
+
+                print('Val loss:', val_loss.item())
