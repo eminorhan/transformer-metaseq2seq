@@ -10,9 +10,11 @@ from copy import deepcopy, copy
 USE_CUDA = torch.cuda.is_available()
 
 # Special symbols
-SOS_token = "SOS" # start of sentence
-EOS_token = "EOS" # end of sentence
-PAD_token = SOS_token # padding symbol
+SOS_token = "SOS"  # start of sentence
+EOS_token = "EOS"  # end of sentence
+PAD_token = SOS_token  # padding symbol
+USE_RECONSTRUCT_LOSS = False  # whether support items are included also as query items
+MAX_TRY_NOVEL = 100  # number of attempts to find a novel episode (not in tabu list) before throwing an error
 
 class Lang:
     # Class for converting strings/words to numerical indices, and vice versa.
@@ -174,7 +176,7 @@ def generate_prim_permutation(shuffle, nsupport, nquery, input_lang, output_lang
 
     count = 0
     while True:
-        D_support, D_query, D_primitive = ge.sample_augment_scan(nsupport, nquery, scan_var_tuples, shuffle, nextra, inc_support_in_query=use_reconstruct_loss)
+        D_support, D_query, D_primitive = ge.sample_augment_scan(nsupport, nquery, scan_var_tuples, shuffle, nextra, inc_support_in_query=USE_RECONSTRUCT_LOSS)
         D_str = '\n'.join([s[0] + ' -> ' + s[1] for s in D_primitive])
         identifier = make_hashable(D_str)
         if not shuffle: # ignore tabu list if we aren't shuffling primitive assignments
@@ -182,7 +184,7 @@ def generate_prim_permutation(shuffle, nsupport, nquery, input_lang, output_lang
         if identifier not in tabu_list:
             break
         count += 1
-        if count > max_try_novel:
+        if count > MAX_TRY_NOVEL:
             raise Exception('We were unable to generate an episode that is not on the tabu list')
     x_support = [d[0].split(' ') for d in D_support]
     y_support = [d[1].split(' ') for d in D_support]
@@ -262,24 +264,22 @@ class TransformerModel(nn.Module):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Meta-seq2seq with generic transformers')
-    parser.add_argument('--max_try_novel', type=int, default=100, help='number of attempts to find a novel episode (not in tabu list) before throwing an error')
-    parser.add_argument('--use_reconstruct_loss', type=bool, default=False, help='whether support items are included also as query items')
     parser.add_argument('--num_episodes_val', type=int, default=5, help='number of episodes to use as validation throughout learning')
     parser.add_argument('--num_episodes', type=int, default=999999, help='number of training episodes')
     parser.add_argument('--nlayers', type=int, default=4, help='number of layers')
     parser.add_argument('--emsize', type=int, default=512, help='embedding size')
     parser.add_argument('--nhead', type=int, default=4, help='the number of heads in the encoder/decoder of the transformer model')
     parser.add_argument('--nhid', type=int, default=1024, help='the number of hidden units in the feedforward layers of the transformer model')
-    parser.add_argument('--lr', type=float, default=0.0005, help='initial learning rate')
-    parser.add_argument('--batch-size', type=int, default=32, help='batch size')
+    parser.add_argument('--lr', type=float, default=0.0001, help='initial learning rate')
+    parser.add_argument('--batch-size', type=int, default=16, help='batch size')
     parser.add_argument('--dropout', type=float, default=0.0, help='dropout applied to layers (0 = no dropout)')
     parser.add_argument('--seed', type=int, default=1111, help='random seed')
-    parser.add_argument('--eval-interval', type=int, default=10, help='evaluate model at this rate')
+    parser.add_argument('--eval-interval', type=int, default=1000, help='evaluate model at this rate')
 
     args = parser.parse_args()
     print(args)
 
-    # Set the random seed manually for reproducibility.
+    # Set the random seed manually for better reproducibility
     torch.manual_seed(args.seed)
 
     scan_all = ge.load_scan_file('all', 'train')
@@ -318,23 +318,24 @@ if __name__ == '__main__':
     # create validation episodes
     tabu_episodes = set([])
     samples_val = []
-    for i in range(num_episodes_val):
+    for i in range(args.num_episodes_val):
         sample = generate_episode_test(tabu_episodes)
         samples_val.append(sample)
         tabu_episodes = tabu_update(tabu_episodes, sample['identifier'])
 
-    for episode in range(1, num_episodes+1):
+    # start training
+    for episode in range(1, args.num_episodes+1):
 
         episode_start_time = time.time()
 
         model.train()
 
         # Generate a batch
-        x = torch.full((400, batch_size), 19, dtype=torch.int64)  # pad with SOS symbol
-        y = torch.full((980, batch_size), 19, dtype=torch.int64)  # pad with SOS symbol  
-        z = torch.full((980, batch_size), 19, dtype=torch.int64)  # pad with SOS symbol  
+        x = torch.full((400, args.batch_size), 19, dtype=torch.int64)  # pad with SOS symbol
+        y = torch.full((980, args.batch_size), 19, dtype=torch.int64)  # pad with SOS symbol  
+        z = torch.full((980, args.batch_size), 19, dtype=torch.int64)  # pad with SOS symbol  
 
-        for i in range(batch_size):
+        for i in range(args.batch_size):
             sample = generate_episode_train(tabu_episodes)
 
             x_b = torch.cat((sample['xs_padded'].flatten(), sample['xq_padded'].flatten()))
