@@ -192,7 +192,26 @@ def generate_prim_permutation(shuffle, nsupport, nquery, input_lang, output_lang
     y_query = [d[1].split(' ') for d in D_query]
 
     return build_sample(x_support, y_support, x_query, y_query, input_lang, output_lang, identifier)
-            
+
+def generate_batch(batch_size, episode_gen_fn, tabu_episodes):
+    # Generate a batch of training episodes for the "add jump" task
+    x = torch.full((400, batch_size), 19, dtype=torch.int64)  # pad with SOS symbol
+    y = torch.full((980, batch_size), 19, dtype=torch.int64)  # pad with SOS symbol  
+    z = torch.full((980, batch_size), 19, dtype=torch.int64)  # pad with SOS symbol  
+
+    for i in range(batch_size):
+        sample = episode_gen_fn(tabu_episodes)
+
+        x_b = torch.cat((sample['xs_padded'].flatten(), sample['xq_padded'].flatten()))
+        y_s = sample['ys_padded'].flatten()
+        y_q = sample['yq_padded'].flatten()
+
+        x[:len(x_b), i] = x_b
+        y[:len(y_s), i] = y_s
+        z[:len(y_q), i] = y_q
+   
+    return x, y, z
+
 
 if __name__ == '__main__':
 
@@ -248,7 +267,7 @@ if __name__ == '__main__':
                                                                              nextra=0, 
                                                                              tabu_list=tabu_episodes)
 
-    # create validation episodes
+    # create validation episodes; these are fixed throughout training, so we need to generate only once
     tabu_episodes = set([])
     samples_val = []
     for i in range(args.num_episodes_val):
@@ -256,28 +275,27 @@ if __name__ == '__main__':
         samples_val.append(sample)
         tabu_episodes = tabu_update(tabu_episodes, sample['identifier'])
 
-    episode_start_time = time.time()
+    x_val = torch.full((400, len(samples_val)), 19, dtype=torch.int64)  # pad with SOS symbol
+    y_val = torch.full((980, len(samples_val)), 19, dtype=torch.int64)  # pad with SOS symbol  
+    z_val = torch.full((980, len(samples_val)), 19, dtype=torch.int64)  # pad with SOS symbol  
+
+    for i in range(len(samples_val)):
+        x_b = torch.cat((samples_val[i]['xs_padded'].flatten(), samples_val[i]['xq_padded'].flatten()))
+        y_s = samples_val[i]['ys_padded'].flatten()
+        y_q = samples_val[i]['yq_padded'].flatten()
+
+        x_val[:len(x_b), i] = x_b
+        y_val[:len(y_s), i] = y_s
+        z_val[:len(y_q), i] = y_q
 
     # start training
+    episode_start_time = time.time()
     for episode in range(1, args.num_episodes+1):
 
         model.train()
 
-        # Generate a batch
-        x = torch.full((400, args.batch_size), 19, dtype=torch.int64)  # pad with SOS symbol
-        y = torch.full((980, args.batch_size), 19, dtype=torch.int64)  # pad with SOS symbol  
-        z = torch.full((980, args.batch_size), 19, dtype=torch.int64)  # pad with SOS symbol  
-
-        for i in range(args.batch_size):
-            sample = generate_episode_train(tabu_episodes)
-
-            x_b = torch.cat((sample['xs_padded'].flatten(), sample['xq_padded'].flatten()))
-            y_s = sample['ys_padded'].flatten()
-            y_q = sample['yq_padded'].flatten()
-
-            x[:len(x_b), i] = x_b
-            y[:len(y_s), i] = y_s
-            z[:len(y_q), i] = y_q
+        # generate batch
+        x, y, z = generate_batch(args.batch_size, generate_episode_train, tabu_episodes)
 
         # update params
         model.zero_grad()
@@ -292,22 +310,8 @@ if __name__ == '__main__':
             model.eval()
 
             with torch.no_grad():
-                # Generate a batch
-                x = torch.full((400, len(samples_val)), 19, dtype=torch.int64)  # pad with SOS symbol
-                y = torch.full((980, len(samples_val)), 19, dtype=torch.int64)  # pad with SOS symbol  
-                z = torch.full((980, len(samples_val)), 19, dtype=torch.int64)  # pad with SOS symbol  
-
-                for i in range(len(samples_val)):
-                    x_b = torch.cat((samples_val[i]['xs_padded'].flatten(), samples_val[i]['xq_padded'].flatten()))
-                    y_s = samples_val[i]['ys_padded'].flatten()
-                    y_q = samples_val[i]['yq_padded'].flatten()
-
-                    x[:len(x_b), i] = x_b
-                    y[:len(y_s), i] = y_s
-                    z[:len(y_q), i] = y_q
-
-                val_out = model(x.cuda(), y.cuda(), src_mask=None, tgt_mask=None)
-                val_loss = criterion(val_out.view(-1, ntoken), z.view(-1).cuda())
+                val_out = model(x_val.cuda(), y_val.cuda(), src_mask=None, tgt_mask=None)
+                val_loss = criterion(val_out.view(-1, ntoken), z_val.view(-1).cuda())
                 # eval_out = torch.argmax(eval_out, dim=-1)
 
                 print('-' * 89)

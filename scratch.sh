@@ -2,7 +2,7 @@
 
 #SBATCH --nodes=1
 #SBATCH --ntasks=4
-#SBATCH --gres=gpu:titanrtx:1
+#SBATCH --gres=gpu:v100:1
 #SBATCH --mem=320GB
 #SBATCH --time=48:00:00
 #SBATCH --array=0
