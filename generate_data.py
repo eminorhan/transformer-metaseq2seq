@@ -195,9 +195,9 @@ def generate_prim_permutation(shuffle, nsupport, nquery, input_lang, output_lang
 
 def generate_batch(batch_size, episode_gen_fn, tabu_episodes):
     # Generate a batch of training episodes for the "add jump" task
-    x = torch.full((400, batch_size), 19, dtype=torch.int64)  # pad with SOS symbol
-    y = torch.full((980, batch_size), 19, dtype=torch.int64)  # pad with SOS symbol  
-    z = torch.full((980, batch_size), 19, dtype=torch.int64)  # pad with SOS symbol  
+    x = torch.full((400, batch_size), 19, dtype=torch.long)  # pad with SOS symbol
+    y = torch.full((980, batch_size), 19, dtype=torch.long)  # pad with SOS symbol  
+    z = torch.full((980, batch_size), 19, dtype=torch.long)  # pad with SOS symbol  
 
     for i in range(batch_size):
         sample = episode_gen_fn(tabu_episodes)
