@@ -17,10 +17,10 @@ if __name__ == '__main__':
     parser.add_argument('--nhead', type=int, default=4, help='the number of heads in the encoder/decoder of the transformer model')
     parser.add_argument('--nhid', type=int, default=1024, help='the number of hidden units in the feedforward layers of the transformer model')
     parser.add_argument('--lr', type=float, default=0.0001, help='initial learning rate')
-    parser.add_argument('--batch-size', type=int, default=64, help='batch size')
+    parser.add_argument('--batch-size', type=int, default=50, help='batch size')
     parser.add_argument('--dropout', type=float, default=0.0, help='dropout applied to layers (0 = no dropout)')
     parser.add_argument('--seed', type=int, default=1111, help='random seed')
-    parser.add_argument('--eval-interval', type=int, default=10, help='evaluate model at this rate')
+    parser.add_argument('--eval-interval', type=int, default=1000, help='evaluate model at this rate')
     parser.add_argument('--model-path', type=str, default='', help='model checkpoint to start from (if any)')
 
     args = parser.parse_args()
@@ -42,7 +42,7 @@ if __name__ == '__main__':
     # set up transformer encoder-decoder model, loss, optimizer
     model = TransformerModel(ntoken=ntoken, emsize=args.emsize, nhead=args.nhead, nhid=args.nhid, nlayers=args.nlayers, dropout=args.dropout)
     model = nn.DataParallel(model).cuda()
-    criterion = nn.NLLoss().cuda()
+    criterion = nn.NLLLoss().cuda()
     optimizer = torch.optim.Adam(model.parameters(), args.lr)
 
     if args.model_path:
