@@ -1,3 +1,4 @@
+import os
 import argparse
 import time
 import torch
@@ -16,10 +17,11 @@ if __name__ == '__main__':
     parser.add_argument('--nhead', type=int, default=4, help='the number of heads in the encoder/decoder of the transformer model')
     parser.add_argument('--nhid', type=int, default=1024, help='the number of hidden units in the feedforward layers of the transformer model')
     parser.add_argument('--lr', type=float, default=0.0001, help='initial learning rate')
-    parser.add_argument('--batch-size', type=int, default=128, help='batch size')
+    parser.add_argument('--batch-size', type=int, default=64, help='batch size')
     parser.add_argument('--dropout', type=float, default=0.0, help='dropout applied to layers (0 = no dropout)')
     parser.add_argument('--seed', type=int, default=1111, help='random seed')
-    parser.add_argument('--eval-interval', type=int, default=1000, help='evaluate model at this rate')
+    parser.add_argument('--eval-interval', type=int, default=10, help='evaluate model at this rate')
+    parser.add_argument('--model-path', type=str, default='', help='model checkpoint to start from (if any)')
 
     args = parser.parse_args()
     print(args)
@@ -40,8 +42,17 @@ if __name__ == '__main__':
     # set up transformer encoder-decoder model, loss, optimizer
     model = TransformerModel(ntoken=ntoken, emsize=args.emsize, nhead=args.nhead, nhid=args.nhid, nlayers=args.nlayers, dropout=args.dropout)
     model = nn.DataParallel(model).cuda()
-    criterion = nn.NLLLoss().cuda()
+    criterion = nn.NLLoss().cuda()
     optimizer = torch.optim.Adam(model.parameters(), args.lr)
+
+    if args.model_path:
+        if os.path.isfile(args.model_path):
+            print('Loading model at:', args.model_path)
+            checkpoint = torch.load(args.model_path)
+            model.load_state_dict(checkpoint['model_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    else:
+        print("=> no checkpoint found at '{}'".format(args.model_path))
 
     generate_episode_train = lambda tabu_episodes : generate_prim_permutation(shuffle=True, 
                                                                               nsupport=20, 
@@ -115,5 +126,7 @@ if __name__ == '__main__':
                 print('-' * 89)
                 print('| iteration {:6d} | time/iter: {:5.2f}s | validation loss {:5.4f} | '.format(episode, (time.time() - episode_start_time) / args.eval_interval, val_loss.item()))
                 print('-' * 89)
+
+                torch.save({'model_sate_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(), 'val_loss': val_loss.item()}, 'model_' + str(episode) + '.tar')
 
                 episode_start_time = time.time()
